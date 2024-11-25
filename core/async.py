@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+from typing import Annotated, Any, Sequence
 from dotenv import load_dotenv
 import operator
 from pydantic import BaseModel, Field
@@ -12,6 +12,8 @@ load_dotenv()
 class State(BaseModel):
     # 'aggregate' will hold a list of strings, with operator.add handling list concatenation
     aggregate: Annotated[list, operator.add]
+    which: str = Field(...,
+                       description="Hold which nodes we want to execute in the execution branch step")
 
 
 # Class to handle node operations
@@ -43,22 +45,35 @@ builder.add_node("a", ReturnNodeValue("I'm A"))  # Node A
 builder.add_edge(START, "a")  # Connect START to A
 
 builder.add_node("b", ReturnNodeValue("I'm B"))  # Node B
-builder.add_node("b2", ReturnNodeValue("I'm B2"))  # Node B2
 builder.add_node("c", ReturnNodeValue("I'm C"))  # Node C
 builder.add_node("d", ReturnNodeValue("I'm D"))  # Node D
+builder.add_node("e", ReturnNodeValue("I'm E"))  # Node E
 
-# Define edges to create the graph topology
-builder.add_edge("a", "b")  # Connect A to B
-builder.add_edge("a", "c")  # Connect A to C
-builder.add_edge("b", "b2")  # Connect B to B2
-builder.add_edge(["b2", "c"], "d")  # Connect B2 and C to D
-builder.add_edge("d", END)  # Connect D to END
+
+def route_bc_or_cd(state: State) -> Sequence[str]:
+    if state.which == "cd":
+        return ["c", "d"]
+    return ["b", "c"]
+
+
+intermediates = ["b", "c", "d"]
+
+builder.add_conditional_edges(
+    "a",
+    route_bc_or_cd,
+    path_map=intermediates,
+)
+
+for node in intermediates:
+    builder.add_edge(node, "e")
+
+builder.add_edge("e", END)
 
 # Compile the graph to prepare it for execution
 graph = builder.compile()
 
 # Generate a visual representation of the graph and save it as 'async.png'
-graph.get_graph().draw_mermaid_png(output_file_path="async2.png")
+graph.get_graph().draw_mermaid_png(output_file_path="async3_conditional.png")
 
 if __name__ == '__main__':
     # Print a greeting message
@@ -66,6 +81,6 @@ if __name__ == '__main__':
 
     # Invoke the graph with initial input and configuration
     graph.invoke(
-        input={"aggregate": []},  # Initialize 'aggregate' as an empty list
+        input={"aggregate": [], "which": "cd"},
         config={"configurable": {"thread_id": "foo"}}  # Configuration for tracing
     )
